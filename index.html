@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>🐱 街区猫王 Street Cat King · 电影版</title>
+<title>🐱 街区猫王 Street Cat King · 立体版</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -27,6 +27,23 @@
 <div id="modal-root"></div>
 <div id="toast-root"></div>
 <div id="grain"></div>
+<!-- 特效层：萤火虫 / 飘字 / 尘土 / 爪痕 / 光环（pointer-events:none，不拦截点击） -->
+<div id="fx-layer"></div>
+<!-- 回合电影黑条横幅 -->
+<div id="banner" class="hidden"><div class="cine-bar top"></div><div class="cine-bar bottom"></div><div id="banner-text"></div></div>
+<!-- 昼夜转场 -->
+<div id="daynight" class="hidden"><div class="sweep"></div><div id="daynight-icon"></div></div>
+<!-- 开屏 -->
+<div id="splash">
+  <div class="splash-rays"></div>
+  <div class="splash-inner">
+    <div class="splash-cats">🐈‍⬛<span class="splash-mid">🐱</span>🐈</div>
+    <h1 class="logo">街区猫王</h1>
+    <p class="splash-en">STREET CAT KING</p>
+    <p class="splash-sub">流浪猫策略领地争夺 · 电影之夜开幕</p>
+    <button id="enter-btn" class="primary">🐾 点击进入街区</button>
+  </div>
+</div>
 <script src="js/config.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/ai.js"></script>
