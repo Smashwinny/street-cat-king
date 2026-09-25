@@ -761,3 +761,86 @@ button.ghost:active, .breed-card:active, .tile-pick:active { transform: scale(.9
   #map { transform: none !important; }
   #fx-layer, #banner, #daynight { display: none !important; }
 }
+
+/* ================================================================
+   v4 · 写实 3D 猫咪棋子
+   底座圆盘 + 写实猫图（圆形裁切、略高于底座、投影立体）
+   ================================================================ */
+.cat { font-size: 0; line-height: 0; width: 34px; height: 34px; }
+.cat .cat-img {
+  position: absolute; left: 50%; bottom: -8px;
+  width: 62px; height: 62px; object-fit: cover; border-radius: 50%;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 7px 7px rgba(0, 0, 0, .55)) drop-shadow(0 0 9px rgba(255, 217, 138, .35));
+  pointer-events: none; user-select: none; -webkit-user-drag: none;
+  animation: catfloat 3.8s ease-in-out infinite, catbreathe 4.6s ease-in-out infinite;
+}
+@keyframes catfloat { 0%, 100% { translate: 0 0; } 50% { translate: 0 -4px; } }
+@keyframes catbreathe { 0%, 100% { scale: 1; } 50% { scale: 1.045; } }
+/* 关掉旧版容器待机动画（改由图片浮动承担），避免与新动作冲突 */
+.cat:not(.sel) { animation: none; }
+.cat.sel::after { top: -46px; } /* 名字标签上移，避开猫图 */
+/* 悬停：整体放大 + 猫图高光扫过 */
+.cat.clickable:hover { transform: scale(1.18); }
+.cat.clickable:hover .cat-img {
+  filter: drop-shadow(0 9px 9px rgba(0, 0, 0, .55)) drop-shadow(0 0 16px rgba(255, 217, 138, .8)) brightness(1.12);
+}
+.cat.clickable:hover::before {
+  content: ""; position: absolute; left: 50%; bottom: -8px;
+  width: 62px; height: 62px; border-radius: 50%;
+  transform: translateX(-50%); z-index: 6; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 244, 214, .45) 50%, transparent 60%);
+  background-size: 250% 100%;
+  animation: sheenx .55s ease;
+}
+@keyframes sheenx { from { background-position: 120% 0; } to { background-position: -20% 0; } }
+/* 点击弹跳 */
+@keyframes boing { 0% { scale: 1; } 30% { scale: 1.24 .8; } 60% { scale: .92 1.12; } 100% { scale: 1; } }
+.cat.boing { animation: boing .45s ease; }
+/* 环境小动作：伸懒腰 / 舔毛摇摆 / 环顾 */
+@keyframes stretchx { 0%, 100% { scale: 1 1; } 35% { scale: 1.14 .8; } 70% { scale: .96 1.08; } }
+.cat.stretch { animation: stretchx 1.15s ease; }
+@keyframes groomrock { 0%, 100% { rotate: 0deg; } 25% { rotate: -10deg; } 60% { rotate: 9deg; } }
+.cat.groom { animation: groomrock 1.2s ease; }
+@keyframes lookaround { 0%, 100% { rotate: 0deg; } 30% { rotate: 16deg; } 65% { rotate: -13deg; } }
+.cat.look { animation: lookaround 1.15s ease; }
+/* 抚摸：呼噜震动 */
+@keyframes purrvibe { 0%, 100% { translate: 0 0; } 25% { translate: 1.5px -1px; } 75% { translate: -1.5px 1px; } }
+.cat.purr { animation: purrvibe .16s linear 8; }
+
+/* ---- 头像 / 品种图标换写实图 ---- */
+.p-avatar { overflow: hidden; padding: 0; }
+.p-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
+.bicon { overflow: hidden; padding: 0; }
+.bicon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.setup-hero .cats-row { display: flex; justify-content: center; gap: 12px; font-size: 0; letter-spacing: 0; }
+.setup-hero .cats-row img {
+  width: 66px; height: 66px; border-radius: 50%; object-fit: cover;
+  border: 2px solid var(--gold-line); box-shadow: var(--glow-gold);
+  animation: bob 3s ease-in-out infinite;
+}
+.setup-hero .cats-row img:nth-child(2) { animation-delay: .4s; }
+.setup-hero .cats-row img:nth-child(3) { animation-delay: .8s; }
+.splash-cats { display: flex; justify-content: center; gap: 14px; align-items: flex-end; font-size: 0; letter-spacing: 0; }
+.splash-cats img {
+  width: 92px; height: 92px; border-radius: 50%; object-fit: cover;
+  border: 3px solid var(--gold-line);
+  filter: drop-shadow(0 0 22px rgba(255, 217, 138, .45));
+  animation: bob 3s ease-in-out infinite;
+}
+.splash-cats img.splash-mid { width: 110px; height: 110px; animation-delay: .45s; }
+
+/* ---- 开屏主视觉：双猫夜草电影感 ---- */
+#splash {
+  background:
+    radial-gradient(1000px 520px at 50% 18%, rgba(255, 217, 138, .12), transparent 65%),
+    radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, .22) 28%, rgba(0, 0, 0, .74) 100%),
+    url("assets/cats/splash-hero.webp") center 30% / cover no-repeat,
+    linear-gradient(180deg, #263626, #141b14 72%);
+}
+
+/* ---- 手机端：保留浮动与换图，关掉 tilt 由 JS 控制 ---- */
+@media (max-width: 960px) {
+  .cat .cat-img { width: 56px; height: 56px; }
+  .cat.clickable:hover::before { display: none; }
+}
