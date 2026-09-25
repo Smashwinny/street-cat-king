@@ -143,7 +143,7 @@ log('🎮 游戏开始！' + players.map(function (p) {
 return p.name + '(' + CONFIG.breedById(p.breed).name + ')';
 }).join('、'));
 drive();
-if (!ui.fast) toast('💡 点选你的猫咪，再点发绿光的格子就能走；先占领 🐟鱼摊 攒鱼吧！');
+if (!ui.fast) toast('💡 点选你的猫咪，再点发金光的格子就能走；先占领 🐟鱼摊 攒鱼吧！');
 }
 
 /* ================= 主驱动 ================= */
@@ -344,7 +344,7 @@ var br = CONFIG.breedById(pl.breed);
 var sel = (selectedCat === c.id)? ' sel': '';
 var clickable = (game.phase === 'turns' && game.players[game.current].type === 'human' &&
 c.player === game.current)? ' clickable': '';
-return '<div class="cat' + sel + clickable + '" data-cat="' + c.id + '" data-pname="' + esc(pl.name) + '" ' +
+return '<div class="cat breed-' + pl.breed + sel + clickable + '" data-cat="' + c.id + '" data-pname="' + esc(pl.name) + '" ' +
 'title="' + esc(pl.name) + ' 的' + br.name + (c.injured? '（受伤×' + c.injured + '）': '') + '"' +
 ' style="border-color:' + pl.color + '">' + br.icon +
 (c.injured? '<span class="inj">🩹' + c.injured + '</span>': '') +
@@ -427,7 +427,7 @@ return '<span title="' + CONFIG.TILE_TYPES[t.type].name + (c.injured? ' 🩹×' 
 (c.trapped? ' 🥅被抓': '') + '">' + br.icon + '</span>';
 }).join('');
 return '<div class="player' + active + '">' +
-'<div class="p-head"><div class="p-avatar" style="border-color:' + p.color + '">' + br.icon + '</div>' +
+'<div class="p-head"><div class="p-avatar breed-' + p.breed + '" style="border-color:' + p.color + '">' + br.icon + '</div>' +
 '<div><div class="p-name" style="color:' + p.color + '">' + esc(p.name) + '</div>' +
 '<div class="ptype">' + br.name + ' · ' + (p.type === 'ai'? '🤖 AI': '🧑 人类') + '</div></div></div>' +
 '<div class="pres"><span class="pill res">🐟 ' + p.fish + '</span>' +
@@ -498,7 +498,7 @@ var first = acts.filter(function (a) { return a.cat;})[0];
 selectedCat = first? first.cat: null;
 }
 if (game.round === 1 &&!ui.fast) {
-h += '<div class="ap-tip">💡 点选你的猫咪，发绿光的格子可直接点过去；先占领 🐟鱼摊 攒鱼！</div>';
+h += '<div class="ap-tip">💡 点选你的猫咪，发金光的格子可直接点过去；先占领 🐟鱼摊 攒鱼！</div>';
 }
 if (selectedCat) {
 var cat = game.catById(selectedCat);
@@ -507,7 +507,7 @@ var tt = CONFIG.TILE_TYPES[t.type];
 h += '<div class="ap-catsel">🐾 选中：' + br.icon + ' 位于 ' + tt.icon + tt.name +
 (cat.injured? ' 🩹×' + cat.injured: '') +
 (cat.trapped? ' 🥅被抓': '') +
-'<br><span class="hint">点地图上的其他猫可切换 · 绿光格子点格即走</span></div>';
+'<br><span class="hint">点地图上的其他猫可切换 · 金光格子点格即走</span></div>';
 var mine = acts.filter(function (a) { return a.cat === selectedCat;});
 // 排序：占领/战斗/觅食优先
 var ord = { occupy: 1, fight: 2, nest: 3, forage: 4, sun: 5, meow: 6, move: 7, rest: 8};
@@ -639,7 +639,7 @@ var medals = ['🥇', '🥈', '🥉'];
 var podium = rows.slice(0, 3).map(function (r, i) {
 var br = CONFIG.breedById(game.players[r.player].breed);
 return '<div class="pod' + (i === 0? ' first': '') + '"><div class="medal">' + medals[i] + '</div>' +
-'<div class="p-avatar" style="border-color:' + r.color + '">' + br.icon + '</div>' +
+'<div class="p-avatar breed-' + game.players[r.player].breed + '" style="border-color:' + r.color + '">' + br.icon + '</div>' +
 '<div class="p-name" style="color:' + r.color + '">' + esc(r.name) + '</div>' +
 '<div class="p-breed">' + r.breed + '</div><div class="p-score">' + r.total + ' 分</div></div>';
 }).join('');
@@ -668,7 +668,7 @@ $('again').addEventListener('click', function () { closeModal(); UI.init();});
 function showHelp() {
 showModal('<div class="ev-art">❓</div><h3>玩法速查</h3><div class="help">' +
 '<p>🐾 <b>目标</b>：12 天（2 人局 10 天）后地盘总分最高者成为街区猫王。</p>' +
-'<p>🗺️ <b>每轮</b>：翻事件 → 起始玩家拼 1 张地块 → 每人 2 行动点（点自己的猫，再点行动按钮；发绿光的格子可直接点过去）。</p>' +
+'<p>🗺️ <b>每轮</b>：翻事件 → 起始玩家拼 1 张地块 → 每人 2 行动点（点自己的猫，再点行动按钮；发金光的格子可直接点过去）。</p>' +
 '<p>📍 <b>占领</b>：在无主地块放爪印；⚔️ <b>战斗</b>：d6+修正，高者胜，平局守方胜，败者受伤回老垃圾场，胜方可夺地。</p>' +
 '<p>🐟 觅食 / ☀️ 晒太阳 / 📦 捡纸箱攒资源；🪹 3 纸箱在已占领纸箱堆筑巢（4 分）；💤 休息回血。</p>' +
 '<p>🏆 <b>计分</b>：地块分（食物2/纸箱2/圣地3/空地马路1）+ 巢穴4 + 连片（每满3连块+2）+ 每3鱼1分 + 每2阳光1分 + 称号（地盘王+3/干饭王+2）。</p>' +
