@@ -65,9 +65,80 @@ var SFX = {
       else if (name === 'move') { this.tone(420, 0, 0.1, 'sine', 0.06); this.tone(640, 0.08, 0.12, 'sine', 0.06); }
       else if (name === 'fight') { this.noise(0.28, 0.13); this.tone(140, 0, 0.2, 'sawtooth', 0.045); }
       else if (name === 'win') { var self = this; [523, 659, 784, 1047].forEach(function (f, i) { self.tone(f, i * 0.11, 0.24, 'triangle', 0.085); }); }
+      else if (name === 'meow') this.meow();
+    } catch (e) {}
+  },
+  /* 喵叫：滑音合成，无音频文件 */
+  meow: function () {
+    var ctx = this.ctx; if (!ctx) return;
+    try {
+      var t = ctx.currentTime;
+      var o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(520, t);
+      o.frequency.exponentialRampToValueAtTime(880, t + 0.12);
+      o.frequency.exponentialRampToValueAtTime(420, t + 0.34);
+      f.type = 'lowpass'; f.frequency.value = 1500;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.085, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
+      o.connect(f); f.connect(g); g.connect(ctx.destination);
+      o.start(t); o.stop(t + 0.42);
     } catch (e) {}
   }
 };
+
+/* ================= 写实猫咪图片资源 ================= */
+var CATIMG = {};
+['orange', 'tabby', 'ragdoll', 'siamese', 'black', 'cow'].forEach(function (b) {
+  CATIMG[b] = { idle: 'assets/cats/' + b + '-idle.webp', action: 'assets/cats/' + b + '-action.webp' };
+});
+function catImg(breed, action) {
+  var e = CATIMG[breed]; if (!e) return '';
+  return action ? e.action : e.idle;
+}
+/* 开局前预加载全部猫图，避免对局中途闪现 */
+(function preloadCats() {
+  try {
+    Object.keys(CATIMG).forEach(function (b) {
+      var a = new Image(); a.src = CATIMG[b].idle;
+      var c = new Image(); c.src = CATIMG[b].action;
+    });
+    var sp = new Image(); sp.src = 'assets/cats/splash-hero.webp';
+  } catch (e) {}
+})();
+function swapCatImg(catId, action) {
+  try {
+    var cat = game.catById(catId); if (!cat) return;
+    var img = document.querySelector('.cat[data-cat="' + catId + '"] .cat-img');
+    if (img) img.src = catImg(game.players[cat.player].breed, action);
+  } catch (e) {}
+}
+function boingCat(el) {
+  if (!el || RM || ui.fast) return;
+  el.classList.remove('boing'); void el.offsetWidth; el.classList.add('boing');
+  setTimeout(function () { el.classList.remove('boing'); }, 520);
+}
+/* 悬停猫咪：喵叫（节流） */
+var lastMeowAt = 0, lastMeowCat = null;
+document.addEventListener('mouseover', function (e) {
+  if (ui.fast || RM || !game) return;
+  var el = e.target && e.target.closest ? e.target.closest('#map .cat') : null;
+  if (!el) return;
+  var now = Date.now();
+  if (el !== lastMeowCat || now - lastMeowAt > 2600) { lastMeowCat = el; lastMeowAt = now; SFX.play('meow'); }
+});
+/* 双击自己的猫：抚摸（爱心 + 呼噜），纯表现，不消耗行动点 */
+document.addEventListener('dblclick', function (e) {
+  if (ui.fast || RM || !game || game.phase !== 'turns') return;
+  var el = e.target && e.target.closest ? e.target.closest('.cat.clickable') : null;
+  if (!el) return;
+  SFX.play('meow');
+  el.classList.remove('purr'); void el.offsetWidth; el.classList.add('purr');
+  fxEmo('💕', el.dataset.cat);
+  setTimeout(function () { el.classList.remove('purr'); }, 1400);
+  log('💕 你抚摸了小猫，它发出了呼噜声（不消耗行动点）');
+});
 
 /* ================= 特效层 helpers ================= */
 function fxLayer() { return $('fx-layer'); }
@@ -149,6 +220,11 @@ function tileCenter(tileId) {
 function afterActionFX(act, pre) {
   try {
     SFX.play(act.kind === 'fight' ? 'fight' : act.kind === 'move' ? 'move' : 'click');
+    /* 移动 / 战斗时换腾跃动作图，结束后换回坐姿图 */
+    if ((act.kind === 'move' || act.kind === 'fight') && act.cat) {
+      swapCatImg(act.cat, true);
+      setTimeout(function () { swapCatImg(act.cat, false); }, act.kind === 'fight' ? 780 : 640);
+    }
     if (act.kind === 'move' && pre) {
       var now = catCenter(act.cat);
       if (now && now.el.animate) {
@@ -244,22 +320,38 @@ var idleTimer = null;
 function startIdle() {
   stopIdle();
   if (RM || ui.fast) return;
-  idleTimer = setInterval(function () {
-    if (ui.screen !== 'game' || document.hidden) return;
-    var cats = document.querySelectorAll('#map .cat');
-    if (!cats.length) return;
-    var c = cats[Math.floor(Math.random() * cats.length)];
-    if (c.classList.contains('twitch') || c.classList.contains('blink') ||
-        c.classList.contains('sel') || c.classList.contains('debut')) return;
-    c.classList.add(Math.random() < 0.5 ? 'twitch' : 'blink');
-  }, 2600);
+  /* 环境小动作：每 4~6 秒随机一只猫伸懒腰 / 舔毛 / 环顾 */
+  function tick() {
+    idleTimer = setTimeout(function () {
+      try {
+        if (ui.screen === 'game' && !document.hidden) {
+          var cats = document.querySelectorAll('#map .cat');
+          if (cats.length) {
+            var c = cats[Math.floor(Math.random() * cats.length)];
+            var acts = ['stretch', 'groom', 'look'];
+            var a = acts[Math.floor(Math.random() * acts.length)];
+            if (!c.classList.contains('sel') && !c.classList.contains('debut') &&
+                !c.classList.contains('hurt') && !c.classList.contains('boing')) {
+              c.classList.add(a);
+              (function (el, cls) { setTimeout(function () { el.classList.remove(cls); }, 1350); })(c, a);
+            }
+          }
+        }
+      } catch (e) {}
+      tick();
+    }, 4000 + Math.random() * 2200);
+  }
+  tick();
 }
-function stopIdle() { if (idleTimer) { clearInterval(idleTimer); idleTimer = null; } }
+function stopIdle() { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } }
 
 /* 卡片 3D tilt（桌面 mousemove；移动端用点击态） */
 var tiltBound = false;
 function enableTilt() {
-  if (tiltBound || RM) return; tiltBound = true;
+  if (tiltBound || RM) return;
+  /* 移动端关掉 tilt，保留浮动与换图 */
+  if (window.matchMedia && !window.matchMedia('(pointer: fine)').matches) return;
+  tiltBound = true;
   document.addEventListener('mousemove', function (e) {
     var el = e.target && e.target.closest ? e.target.closest('.breed-card,.tile-pick') : null;
     if (!el) return;
@@ -369,7 +461,7 @@ ui.setupPlayers = [];
 for (var i = 0; i < n; i++) ui.setupPlayers.push({ name: CONFIG.PLAYER_NAMES[i], type: i === 0? 'human': 'ai'});
 }
 var h = '<div class="setup-card"><div class="setup-hero">' +
-'<div class="cats-row">🐱🐈🐈‍⬛</div><h1>街区猫王</h1>' +
+'<div class="cats-row"><img src="' + catImg('orange') + '" alt="橘猫"><img src="' + catImg('black') + '" alt="黑猫"><img src="' + catImg('cow') + '" alt="奶牛猫"></div><h1>街区猫王</h1>' +
 '<p class="subtitle">流浪猫策略领地争夺 · 2-4 人 · 约60分钟</p></div>' +
 '<div class="setup-row"><span>玩家人数：</span><div class="seg" id="pcount-seg">' +
 [2, 3, 4].map(function (x) {
@@ -424,7 +516,7 @@ var h = '<div class="setup-card"><div class="setup-hero">' +
 (sp.type === 'ai'? '(AI 托管)': '') + '</p><div class="breed-grid">' +
 avail.map(function (b) {
 return '<button class="breed-card auto-pick" data-b="' + b.id + '">' +
-'<div class="breed-top"><div class="bicon">' + b.icon + '</div>' +
+'<div class="breed-top"><div class="bicon"><img src="' + catImg(b.id) + '" alt="' + esc(b.name) + '"></div>' +
 '<div><b>' + b.name + '</b><div class="btitle">' + b.title + '</div></div></div>' +
 '<div class="bdesc">' + b.desc + '</div></button>';
 }).join('') + '</div></div>';
@@ -691,7 +783,7 @@ var clickable = (game.phase === 'turns' && game.players[game.current].type === '
 c.player === game.current)? ' clickable': '';
 return '<div class="cat breed-' + pl.breed + sel + clickable + '" data-cat="' + c.id + '" data-pname="' + esc(pl.name) + '" ' +
 'title="' + esc(pl.name) + ' 的' + br.name + (c.injured? '（受伤×' + c.injured + '）': '') + '"' +
-' style="border-color:' + pl.color + '">' + br.icon +
+' style="border-color:' + pl.color + '"><img class="cat-img" src="' + catImg(pl.breed) + '" alt="' + esc(br.name) + '" draggable="false">' +
 (c.injured? '<span class="inj">🩹' + c.injured + '</span>': '') +
 (c.trapped? '<span class="inj">🥅</span>': '') + '</div>';
 }).join('');
@@ -731,9 +823,19 @@ var tileEl = e.target.closest('.tile');
 if (tileEl && ui.pickMode === 'pickTile') { pickTileOnMap(+tileEl.dataset.tile); return;}
 var catEl = e.target.closest('.cat.clickable');
 if (catEl) {
-selectedCat = catEl.dataset.cat;
-SFX.play('click');
+var cid = catEl.dataset.cat;
+selectedCat = cid;
+SFX.play('meow');
 renderMap(); renderActionPanel();
+var nel = document.querySelector('.cat[data-cat="' + cid + '"]');
+boingCat(nel);
+return;
+}
+// 点别人家的猫：弹跳 + 喵叫，纯互动
+var anyCat = e.target.closest('.cat');
+if (anyCat && game && game.phase === 'turns' && !ui.fast) {
+SFX.play('meow');
+boingCat(anyCat);
 return;
 }
 // 选中猫后点发光格直接移动
@@ -783,7 +885,7 @@ return '<span title="' + CONFIG.TILE_TYPES[t.type].name + (c.injured? ' 🩹×' 
 (c.trapped? ' 🥅被抓': '') + '">' + br.icon + '</span>';
 }).join('');
 return '<div class="player' + active + '">' +
-'<div class="p-head"><div class="p-avatar breed-' + p.breed + '" style="border-color:' + p.color + '">' + br.icon + '</div>' +
+'<div class="p-head"><div class="p-avatar breed-' + p.breed + '" style="border-color:' + p.color + '"><img src="' + catImg(p.breed) + '" alt="' + esc(br.name) + '"></div>' +
 '<div><div class="p-name" style="color:' + p.color + '">' + esc(p.name) + '</div>' +
 '<div class="ptype">' + br.name + ' · ' + (p.type === 'ai'? '🤖 AI': '🧑 人类') + '</div></div></div>' +
 '<div class="pres"><span class="pill res">🐟 ' + p.fish + '</span>' +
@@ -995,7 +1097,7 @@ var medals = ['🥇', '🥈', '🥉'];
 var podium = rows.slice(0, 3).map(function (r, i) {
 var br = CONFIG.breedById(game.players[r.player].breed);
 return '<div class="pod' + (i === 0? ' first': '') + '"><div class="medal">' + medals[i] + '</div>' +
-'<div class="p-avatar breed-' + game.players[r.player].breed + '" style="border-color:' + r.color + '">' + br.icon + '</div>' +
+'<div class="p-avatar breed-' + game.players[r.player].breed + '" style="border-color:' + r.color + '"><img src="' + catImg(game.players[r.player].breed) + '" alt="' + esc(br.name) + '"></div>' +
 '<div class="p-name" style="color:' + r.color + '">' + esc(r.name) + '</div>' +
 '<div class="p-breed">' + r.breed + '</div><div class="p-score">' + r.total + ' 分</div></div>';
 }).join('');
