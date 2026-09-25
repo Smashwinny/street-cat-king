@@ -19,6 +19,325 @@ return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt
 var ACT_ICONS = { move: '🐾', occupy: '📍', forage: '🍽️', sun: '☀️', fight: '⚔️',
   nest: '🪹', rest: '💤', meow: '😻', peek: '👀', mad: '🐄', pass: '⏭️' };
 
+// 是否偏好减少动态：是则全部动效降级为静态
+var RM = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+/* ================= WebAudio 合成音效（无音频文件） ================= */
+var SFX = {
+  ctx: null, muted: false,
+  ensure: function () {
+    if (!this.ctx) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) this.ctx = new AC();
+      } catch (e) { this.ctx = null; }
+    }
+    if (this.ctx && this.ctx.state === 'suspended') { try { this.ctx.resume(); } catch (e) {} }
+    return this.ctx;
+  },
+  tone: function (f, t0, dur, type, vol) {
+    var ctx = this.ctx; if (!ctx) return;
+    var o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type || 'sine'; o.frequency.value = f;
+    var t = ctx.currentTime + (t0 || 0);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol || 0.08, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t); o.stop(t + dur + 0.05);
+  },
+  noise: function (dur, vol) {
+    var ctx = this.ctx; if (!ctx) return;
+    var len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    var src = ctx.createBufferSource(); src.buffer = buf;
+    var f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 850;
+    var g = ctx.createGain(); g.gain.value = vol || 0.12;
+    src.connect(f); f.connect(g); g.connect(ctx.destination); src.start();
+  },
+  play: function (name) {
+    if (this.muted || ui.fast) return;
+    if (!this.ensure()) return;
+    try {
+      if (name === 'click') this.tone(680, 0, 0.07, 'triangle', 0.055);
+      else if (name === 'move') { this.tone(420, 0, 0.1, 'sine', 0.06); this.tone(640, 0.08, 0.12, 'sine', 0.06); }
+      else if (name === 'fight') { this.noise(0.28, 0.13); this.tone(140, 0, 0.2, 'sawtooth', 0.045); }
+      else if (name === 'win') { var self = this; [523, 659, 784, 1047].forEach(function (f, i) { self.tone(f, i * 0.11, 0.24, 'triangle', 0.085); }); }
+    } catch (e) {}
+  }
+};
+
+/* ================= 特效层 helpers ================= */
+function fxLayer() { return $('fx-layer'); }
+function fxEl(cls, x, y, html) {
+  var layer = fxLayer(); if (!layer) return null;
+  var d = document.createElement('div');
+  d.className = cls; d.style.left = x + 'px'; d.style.top = y + 'px';
+  if (html) d.innerHTML = html;
+  layer.appendChild(d);
+  return d;
+}
+function fxLater(el, ms) {
+  if (!el) return;
+  setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, ms);
+}
+function fxFloat(txt, x, y) {
+  var d = fxEl('float-txt', x - 24, y - 12);
+  if (!d) return; d.textContent = txt; fxLater(d, 1250);
+}
+function fxDust(x, y) {
+  for (var i = 0; i < 5; i++) {
+    (function () {
+      var d = fxEl('dust', x - 5 + (Math.random() * 34 - 17), y - 6);
+      if (!d) return;
+      d.style.setProperty('--dx', (Math.random() * 76 - 38) + 'px');
+      fxLater(d, 760);
+    })();
+  }
+}
+function fxRing(x, y) {
+  var d = fxEl('ringfx', x, y);
+  if (!d) return; d.style.width = d.style.height = '76px'; fxLater(d, 1050);
+}
+function fxClaws(x, y) {
+  var d = fxEl('claws', x - 48, y - 48, '<span></span><span></span><span></span>');
+  fxLater(d, 950);
+}
+function fxEmo(emo, catId) {
+  var el = document.querySelector('.cat[data-cat="' + catId + '"]');
+  if (!el) return;
+  var r = el.getBoundingClientRect();
+  var d = fxEl('emofx', r.left + r.width / 2 - 12, r.top - 30);
+  if (!d) return; d.textContent = emo; fxLater(d, 1950);
+}
+function fxDice(x, y) {
+  var d = fxEl('dicefx', x - 18, y - 64);
+  if (!d) return; d.textContent = '🎲'; fxLater(d, 1000);
+}
+function fxConfetti(modal) {
+  if (!modal) return;
+  var colors = ['#ffd98a', '#ff8a5c', '#7fd4a8', '#8ab8ff', '#f5ead3'];
+  for (var i = 0; i < 36; i++) {
+    (function (i) {
+      var c = document.createElement('div');
+      c.className = 'confetti';
+      c.style.left = (Math.random() * 100) + '%';
+      c.style.background = colors[i % colors.length];
+      c.style.animationDuration = (1.7 + Math.random() * 1.7) + 's';
+      c.style.animationDelay = (Math.random() * 0.9) + 's';
+      modal.appendChild(c);
+      fxLater(c, 4400);
+    })(i);
+  }
+}
+function catCenter(catId) {
+  var el = document.querySelector('.cat[data-cat="' + catId + '"]');
+  if (!el) return null;
+  var r = el.getBoundingClientRect();
+  return { el: el, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+function tileCenter(tileId) {
+  var t = document.querySelector('.tile[data-tile="' + tileId + '"]');
+  if (!t) return null;
+  var r = t.getBoundingClientRect();
+  return { el: t, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+/* 行动后特效：移动跳跃 FLIP / 战斗爪击 / 飘字 / 光环 */
+function afterActionFX(act, pre) {
+  try {
+    SFX.play(act.kind === 'fight' ? 'fight' : act.kind === 'move' ? 'move' : 'click');
+    if (act.kind === 'move' && pre) {
+      var now = catCenter(act.cat);
+      if (now && now.el.animate) {
+        var dx = pre.x - now.x, dy = pre.y - now.y;
+        now.el.animate([
+          { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(1,1)', offset: 0 },
+          { transform: 'translate(' + (dx / 2) + 'px,' + (dy / 2 - 36) + 'px) scale(1.14,0.9)', offset: 0.45 },
+          { transform: 'translate(0px,0px) scale(1.2,0.8)', offset: 0.8 },
+          { transform: 'translate(0px,0px) scale(1,1)', offset: 1 }
+        ], { duration: 520, easing: 'cubic-bezier(.3,.7,.4,1)' });
+        fxDust(now.x, now.y + 12);
+      }
+    } else if (act.kind === 'fight' && pre && pre.dtile != null) {
+      var tc = tileCenter(pre.dtile);
+      if (tc) {
+        fxClaws(tc.x, tc.y);
+        fxDice(tc.x, tc.y);
+        if (tc.el.animate) {
+          tc.el.animate([
+            { transform: 'translate(0,0)' }, { transform: 'translate(-8px,2px)' },
+            { transform: 'translate(7px,-2px)' }, { transform: 'translate(-4px,0)' },
+            { transform: 'translate(0,0)' }
+          ], { duration: 400 });
+        }
+      }
+      // 胜者前扑，败者抖动灰度
+      var atk = game.catById(act.cat);
+      var won = atk && atk.tile === pre.dtile;
+      var atkNow = catCenter(act.cat);
+      if (atkNow && atkNow.el.animate) {
+        if (won) {
+          atkNow.el.animate([
+            { transform: 'translate(-30px,8px) scale(1.4)', offset: 0 },
+            { transform: 'translate(0,0) scale(1)', offset: 1 }
+          ], { duration: 300, easing: 'ease-out' });
+        } else {
+          atkNow.el.classList.add('hurt');
+          setTimeout(function () { atkNow.el.classList.remove('hurt'); }, 650);
+        }
+      }
+      if (act.target) {
+        var defNow = catCenter(act.target);
+        if (defNow && !won) {
+          defNow.el.animate([
+            { transform: 'translate(26px,-6px) scale(1.35)', offset: 0 },
+            { transform: 'translate(0,0) scale(1)', offset: 1 }
+          ], { duration: 300, easing: 'ease-out' });
+        }
+      }
+    } else if (act.kind === 'rest') {
+      fxEmo('💤', act.cat);
+    } else if (act.kind === 'meow') {
+      fxEmo('💕', act.cat);
+    } else if (act.kind === 'occupy' || act.kind === 'nest') {
+      var c = act.cat ? catCenter(act.cat) : null;
+      if (c) fxRing(c.x, c.y);
+      var cat = act.cat ? game.catById(act.cat) : null;
+      if (cat) { var t2 = tileCenter(cat.tile); if (t2) fxFloat(act.kind === 'nest' ? '🪹 筑巢!' : '📍 占领!', t2.x, t2.y - 30); }
+    } else if (act.kind === 'forage' && pre) {
+      var ft = game.tileById(pre.tile);
+      var ftxt = (ft && ft.type === 'boxpile') ? '+1📦' : '+2🐟';
+      fxFloat(ftxt, pre.x, pre.y - 26);
+    } else if (act.kind === 'sun' && pre) {
+      fxFloat('+1☀️', pre.x, pre.y - 26);
+    } else if (act.kind === 'mad') {
+      fxFloat('+1⚡', pre ? pre.x : 0, pre ? pre.y - 26 : 0);
+    }
+  } catch (e) {}
+}
+
+/* 萤火虫环境粒子 */
+function initFireflies() {
+  if (RM || ui.fast) return;
+  var layer = fxLayer(); if (!layer || layer.dataset.ff) return;
+  layer.dataset.ff = '1';
+  for (var i = 0; i < 24; i++) {
+    var f = document.createElement('div');
+    f.className = 'firefly';
+    var s = 4 + Math.random() * 5;
+    f.style.width = f.style.height = s + 'px';
+    f.style.left = (Math.random() * 100) + 'vw';
+    f.style.top = (38 + Math.random() * 58) + 'vh';
+    f.style.setProperty('--fx', (Math.random() * 170 - 85) + 'px');
+    f.style.setProperty('--fy', (-70 - Math.random() * 150) + 'px');
+    f.style.animationDuration = (9 + Math.random() * 9) + 's';
+    f.style.animationDelay = (-Math.random() * 14) + 's';
+    layer.appendChild(f);
+  }
+}
+
+/* 待机随机小动作：耳朵抖 / 眨眼 */
+var idleTimer = null;
+function startIdle() {
+  stopIdle();
+  if (RM || ui.fast) return;
+  idleTimer = setInterval(function () {
+    if (ui.screen !== 'game' || document.hidden) return;
+    var cats = document.querySelectorAll('#map .cat');
+    if (!cats.length) return;
+    var c = cats[Math.floor(Math.random() * cats.length)];
+    if (c.classList.contains('twitch') || c.classList.contains('blink') ||
+        c.classList.contains('sel') || c.classList.contains('debut')) return;
+    c.classList.add(Math.random() < 0.5 ? 'twitch' : 'blink');
+  }, 2600);
+}
+function stopIdle() { if (idleTimer) { clearInterval(idleTimer); idleTimer = null; } }
+
+/* 卡片 3D tilt（桌面 mousemove；移动端用点击态） */
+var tiltBound = false;
+function enableTilt() {
+  if (tiltBound || RM) return; tiltBound = true;
+  document.addEventListener('mousemove', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('.breed-card,.tile-pick') : null;
+    if (!el) return;
+    if (!el.dataset.tilt) {
+      el.dataset.tilt = '1'; el.classList.add('tilt3d');
+      el.addEventListener('mouseleave', function () { el.style.transform = ''; });
+    }
+    var r = el.getBoundingClientRect();
+    if (!r.width) return;
+    var px = (e.clientX - r.left) / r.width - 0.5;
+    var py = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = 'perspective(750px) rotateX(' + (-py * 10).toFixed(2) +
+      'deg) rotateY(' + (px * 12).toFixed(2) + 'deg) translateZ(6px)';
+  });
+}
+
+/* 开屏 */
+var splashBound = false;
+function initSplash() {
+  var sp = $('splash'); if (!sp) return;
+  if (ui.fast || RM || window.__SMOKE__ || splashBound) {
+    if (!splashBound) { sp.style.display = 'none'; }
+    return;
+  }
+  splashBound = true;
+  $('enter-btn').addEventListener('click', function () {
+    SFX.ensure(); SFX.play('click');
+    sp.classList.add('hide');
+    setTimeout(function () { sp.style.display = 'none'; }, 550);
+  });
+}
+
+/* 回合电影黑条横幅 */
+function maybeBanner() {
+  if (ui.fast || RM || !game) return;
+  var key = game.round + '|' + (game.isDay() ? 'd' : 'n') + '|' + game.phase;
+  if (ui._bannerKey === key) return;
+  var first = (ui._bannerKey === undefined);
+  ui._bannerKey = key;
+  if (first) return;
+  var b = $('banner'); if (!b) return;
+  $('banner-text').textContent = '第 ' + game.round + ' 天 · ' + (game.isDay() ? '☀️ 白天' : '🌙 夜晚');
+  b.classList.remove('hidden');
+  requestAnimationFrame(function () { b.classList.add('show'); });
+  setTimeout(function () {
+    b.classList.remove('show');
+    setTimeout(function () { b.classList.add('hidden'); }, 420);
+  }, 1250);
+}
+/* 昼夜转场 */
+function maybeDayNight() {
+  if (ui.fast || RM || !game) return;
+  var d = game.isDay() ? 'd' : 'n';
+  if (ui._dnKey === undefined) { ui._dnKey = d; return; }
+  if (ui._dnKey === d) return;
+  ui._dnKey = d;
+  var o = $('daynight'); if (!o) return;
+  $('daynight-icon').textContent = d === 'd' ? '☀️' : '🌙';
+  o.className = d === 'd' ? 'to-day play' : 'to-night play';
+  void o.offsetWidth;
+  setTimeout(function () { o.className = 'hidden'; }, 1200);
+}
+/* 回合开始：当前行动猫登场弹跳 */
+function maybeDebut() {
+  if (ui.fast || RM || !game || game.phase !== 'turns') return;
+  var key = game.round + '-' + game.current;
+  if (ui._debutKey === key) return;
+  ui._debutKey = key;
+  if (game.players[game.current].type !== 'human') return;
+  game.players[game.current].cats.forEach(function (c) {
+    var el = document.querySelector('.cat[data-cat="' + c.id + '"]');
+    if (el && !el.classList.contains('debut')) {
+      el.classList.add('debut');
+      setTimeout(function () { el.classList.remove('debut'); }, 700);
+    }
+  });
+}
+
 function toast(msg, ms) {
 var rootEl = $('toast-root'); if (!rootEl) return;
 var d = document.createElement('div');
@@ -33,9 +352,13 @@ setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d);}, 450);
 /* ================= 设置界面 ================= */
 
 UI.init = function () {
+stopIdle();
 renderSetup();
 $('game-screen').classList.add('hidden');
 $('setup-screen').classList.remove('hidden');
+ui.screen = 'setup';
+// 立体版氛围初始化
+initSplash(); initFireflies(); startIdle(); enableTilt();
 };
 
 function renderSetup() {
@@ -133,6 +456,7 @@ game = new ENGINE.Game({ players: players});
 selectedCat = null;
 renderMap._prev = {};
 ui.screen = 'game';
+ui._bannerKey = undefined; ui._dnKey = undefined; ui._debutKey = undefined;
 $('setup-screen').classList.add('hidden');
 $('game-screen').classList.remove('hidden');
 // 日志折叠开关（手机默认收起）
@@ -187,10 +511,23 @@ else autoHumanAction();
 
 function doAction(a) {
 if (!game || game.phase!== 'turns') return;
-var r = game.doAction(a || { kind: 'pass'});
+var act = a || { kind: 'pass'};
+// 动作前记录棋子/地块位置，供特效做 FLIP
+var pre = null;
+if (!ui.fast &&!RM && act.cat) {
+var cc = catCenter(act.cat);
+var cat = game.catById(act.cat);
+if (cc && cat) pre = { x: cc.x, y: cc.y, tile: cat.tile };
+if (act.kind === 'fight' && act.target) {
+var def = game.catById(act.target);
+if (def) pre.dtile = def.tile;
+}
+}
+var r = game.doAction(act);
 if (!r.ok) { log('⚠️ ' + r.msg);}
 if (selectedCat &&!game.catById(selectedCat)) selectedCat = null;
 drive();
+if (!ui.fast &&!RM) afterActionFX(act, pre);
 }
 
 // 战斗二次确认（fast/冒烟模式直接执行，避免卡住）
@@ -257,6 +594,8 @@ if (game.log.length!== render._n) {
 for (var i = render._n || 0; i < game.log.length; i++) log(game.log[i].msg);
 render._n = game.log.length;
 }
+// 电影包装：回合横幅 / 昼夜转场 / 登场弹跳
+maybeBanner(); maybeDayNight(); maybeDebut();
 }
 render._n = 0;
 
@@ -275,11 +614,17 @@ h += '<span class="pill ap">⚡ ' + game.ap + ' 行动点</span>' +
 '<span class="pill res">📍 ' + cp.marks + '</span>';
 }
 h += '</div><div class="tb-right">' +
+'<button id="btn-sound">' + (SFX.muted? '🔇 静音': '🔊 音效') + '</button>' +
 '<button id="btn-save">💾 存档</button>' +
 '<button id="btn-load">📂 读档</button>' +
 '<button id="btn-help">❓ 帮助</button>' +
 '<button id="btn-restart">🔄 重开</button></div>';
 $('topbar').innerHTML = h;
+$('btn-sound').onclick = function () {
+SFX.muted =!SFX.muted;
+if (!SFX.muted) { SFX.ensure(); SFX.play('click');}
+renderTopbar();
+};
 $('btn-save').onclick = function () {
 try { localStorage.setItem('ckg_save', game.serialize()); log('💾 已存档'); toast('💾 已存档');}
 catch (e) { log('⚠️ 存档失败：' + e.message);}
@@ -387,6 +732,7 @@ if (tileEl && ui.pickMode === 'pickTile') { pickTileOnMap(+tileEl.dataset.tile);
 var catEl = e.target.closest('.cat.clickable');
 if (catEl) {
 selectedCat = catEl.dataset.cat;
+SFX.play('click');
 renderMap(); renderActionPanel();
 return;
 }
@@ -405,14 +751,24 @@ doAction(a); return;
 }
 });
 
+// 待机小动作结束后自动摘掉 class，恢复呼吸循环
+document.addEventListener('animationend', function (e) {
+var t = e.target;
+if (t && t.classList && (t.classList.contains('twitch') || t.classList.contains('blink'))) {
+t.classList.remove('twitch'); t.classList.remove('blink');
+}
+});
+
 function pickCell(x, y) {
 ui.pickMode = null;
+SFX.play('click');
 game.resolvePending({ x: x, y: y});
 drive();
 }
 
 function pickTileOnMap(tileId) {
 ui.pickMode = null; ui.pickSub = null;
+SFX.play('click');
 game.resolvePending({ tileId: tileId});
 drive();
 }
@@ -663,6 +1019,14 @@ CONFIG.breedById(game.players[w.player].breed).icon + '（' + w.total + ' 分）
 trs + '</table>' +
 '<div class="btn-col"><button id="again" class="primary auto-pick">🔄 再来一局</button></div>');
 $('again').addEventListener('click', function () { closeModal(); UI.init();});
+// 胜利包装：冠军欢呼 + 彩带 + 胜利音
+SFX.play('win');
+if (!RM &&!ui.fast) {
+var champ = document.querySelector('#modal-root .pod.first .p-avatar');
+if (champ) champ.classList.add('cheer');
+var modal = document.querySelector('#modal-root .modal');
+if (modal) fxConfetti(modal);
+}
 }
 
 function showHelp() {
